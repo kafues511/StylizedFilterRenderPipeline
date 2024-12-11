@@ -1,0 +1,88 @@
+// Copyright 2024 kafues511. All Rights Reserved.
+
+/*=============================================================================
+	SNN.usf: Symmetric Nearest Neighbor
+=============================================================================*/
+
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/SceneTexturesCommon.ush"
+#include "/Engine/Private/DeferredShadingCommon.ush"
+
+int KernelHalfSize;
+float InvWeight;
+
+// 距離の2乗を計算
+float CalcDistanceSquared(float3 X, float3 Y)
+{
+	float3 Diff = X - Y;
+	return dot(Diff, Diff);
+}
+
+#define ViewportUVToClampedBufferUV(BufferUV, U, V) (clamp(BufferUV + ViewportUVToBufferUV(float2(U, V) * View.ViewSizeAndInvSize.zw), View.BufferBilinearUVMinMax.xy, View.BufferBilinearUVMinMax.zw))
+
+void MainPS(
+	FScreenVertexOutput Input,
+	out float4 OutColor : SV_Target0)
+{
+	float2 BufferUV  = Input.UV;
+	float2 ClampedUV = clamp(BufferUV, View.BufferBilinearUVMinMax.xy, View.BufferBilinearUVMinMax.zw);
+
+	float3 SceneColor = CalcSceneColor(ClampedUV);
+
+	float3 AccColor = SceneColor;
+
+	for (int x = 1; x <= KernelHalfSize; ++x)
+	{
+		float3 c1 = CalcSceneColor(ViewportUVToClampedBufferUV(BufferUV, -x, 0.0));
+		float3 c2 = CalcSceneColor(ViewportUVToClampedBufferUV(BufferUV,  x, 0.0));
+
+		float d1 = CalcDistanceSquared(c1, SceneColor);
+		float d2 = CalcDistanceSquared(c2, SceneColor);
+
+		float d = step(d2, d1);
+
+		// Non-optimized version:
+		// FLATTEN
+		// if (d1 < d2)
+		// {
+		//     AccColor += c1;
+		// }
+		// else
+		// {
+		//     AccColor += c2;
+		// }
+
+		AccColor += c1 * (1.0 - d);
+		AccColor += c2 * d;
+	}
+
+	for (int y = 1; y <= KernelHalfSize; ++y)
+	{
+		for (int x = -KernelHalfSize; x <= KernelHalfSize; ++x)
+		{
+			float3 c1 = CalcSceneColor(ViewportUVToClampedBufferUV(BufferUV,  x, -y));
+			float3 c2 = CalcSceneColor(ViewportUVToClampedBufferUV(BufferUV, -x,  y));
+
+			float d1 = CalcDistanceSquared(c1, SceneColor);
+			float d2 = CalcDistanceSquared(c2, SceneColor);
+
+			float d = step(d2, d1);
+
+			// Non-optimized version:
+			// FLATTEN
+			// if (d1 < d2)
+			// {
+			//     AccColor += c1;
+			// }
+			// else
+			// {
+			//     AccColor += c2;
+			// }
+
+			AccColor += c1 * (1.0 - d);
+			AccColor += c2 * d;
+		}
+	}
+
+	OutColor = float4(AccColor * InvWeight, 1.0);
+}
