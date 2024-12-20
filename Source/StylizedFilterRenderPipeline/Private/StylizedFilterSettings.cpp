@@ -8,5 +8,6 @@ FStylizedFilterSettings::FStylizedFilterSettings()
 	FMemory::Memzero(this, sizeof(FStylizedFilterSettings));
 
 	Enabled = false;
+	FilterType = EStylizedFilterType::SNN;
 	Kernel = 7;
 }

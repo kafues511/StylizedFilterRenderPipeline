@@ -1,0 +1,60 @@
+// Copyright 2024 kafues511. All Rights Reserved.
+
+/*=============================================================================
+	Kuwahara.usf: Kuwahara Filter
+=============================================================================*/
+
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/SceneTexturesCommon.ush"
+#include "/Engine/Private/DeferredShadingCommon.ush"
+
+float InvWeight;
+int4 IterParams[4];
+
+#define IterRowBegin(Block)    (IterParams[Block].x)
+#define IterRowEnd(Block)      (IterParams[Block].y)
+#define IterColumnBegin(Block) (IterParams[Block].z)
+#define IterColumnEnd(Block)   (IterParams[Block].w)
+
+#define ViewportUVToClampedBufferUV(BufferUV, U, V) (clamp(BufferUV + ViewportUVToBufferUV(float2(U, V) * View.ViewSizeAndInvSize.zw), View.BufferBilinearUVMinMax.xy, View.BufferBilinearUVMinMax.zw))
+
+void MainPS(
+	FScreenVertexOutput Input,
+	out float4 OutColor : SV_Target0)
+{
+	float3 Color = float3(0.0, 0.0, 0.0);
+
+	float MinVarSum = 1e6; // 最小比較で通すため適当に大きい初期値
+
+	UNROLL
+	for (uint block = 0; block < 4; ++block)
+	{
+		float3 Ave = float3(0.0, 0.0, 0.0); // 平均
+		float3 Var = float3(0.0, 0.0, 0.0); // 分散
+
+		LOOP
+		for (int y = IterRowBegin(block); y <= IterRowEnd(block); ++y)
+		{
+			LOOP
+			for (int x = IterColumnBegin(block); x <= IterColumnEnd(block); ++x)
+			{
+				float3 c = CalcSceneColor(ViewportUVToClampedBufferUV(Input.UV, x, y));
+				Ave += c;
+				Var += Pow2(c);
+			}
+		}
+
+		Ave *= InvWeight;
+		Var = (Var * InvWeight - Pow2(Ave));
+
+		// 最も小さい分散の平均を採用
+		float VarSum = VectorSum(Var);
+		if (VarSum < MinVarSum)
+		{
+			MinVarSum = VarSum;
+			Color = Ave;
+		}
+	}
+
+	OutColor = float4(Color, 1.0);
+}

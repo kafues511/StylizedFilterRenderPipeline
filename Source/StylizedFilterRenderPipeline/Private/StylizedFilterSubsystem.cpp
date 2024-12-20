@@ -45,6 +45,7 @@ void UStylizedFilterSubsystem::OverrideStylizedFilterSettings(const FStylizedFil
 	FStylizedFilterSettings& Value = StylizedFilterSettings;
 
 	SET_PP(Enabled);
+	SET_PP(FilterType);
 	SET_PP(Kernel);
 }
 

@@ -31,7 +31,28 @@ public:
 	}
 };
 
-IMPLEMENT_GLOBAL_SHADER(FSNNPS, "/Plugin/StylizedFilterRenderPipeline/Private/SNN.usf", "MainPS", SF_Pixel);
+class FKuwaharaPS : public FGlobalShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FKuwaharaPS);
+	SHADER_USE_PARAMETER_STRUCT(FKuwaharaPS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, View)
+		SHADER_PARAMETER_STRUCT_INCLUDE(FSceneTextureShaderParameters, SceneTextures)
+		SHADER_PARAMETER(float, InvWeight)
+		SHADER_PARAMETER_ARRAY(FIntVector4, IterParams, [4])
+		RENDER_TARGET_BINDING_SLOTS()
+	END_SHADER_PARAMETER_STRUCT()
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5) || IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM6);
+	}
+};
+
+IMPLEMENT_GLOBAL_SHADER(FSNNPS,      "/Plugin/StylizedFilterRenderPipeline/Private/SNN.usf",      "MainPS", SF_Pixel);
+IMPLEMENT_GLOBAL_SHADER(FKuwaharaPS, "/Plugin/StylizedFilterRenderPipeline/Private/Kuwahara.usf", "MainPS", SF_Pixel);
 
 FStylizedFilterViewExtension::FStylizedFilterViewExtension(const FAutoRegister& AutoRegister, UStylizedFilterSubsystem* InStylizedFilterSubsystem)
 	: FSceneViewExtensionBase(AutoRegister)
@@ -58,7 +79,7 @@ void FStylizedFilterViewExtension::SetupViewFamily(FSceneViewFamily& InViewFamil
 
 void FStylizedFilterViewExtension::PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs)
 {
-	if (!FinalStylizedFilterSettings.Enabled)
+	if (!FinalStylizedFilterSettings.IsValid())
 	{
 		return;
 	}
@@ -83,7 +104,8 @@ void FStylizedFilterViewExtension::PrePostProcessPass_RenderThread(FRDGBuilder& 
 		OutputTexture = GraphBuilder.CreateTexture(OutputTextureDesc, TEXT("StylizedFilter.Output"));
 	}
 
-	// Stylized Filter Pass
+	// Stylized Filter Pass (SNN)
+	if (FinalStylizedFilterSettings.FilterType == EStylizedFilterType::SNN)
 	{
 		const int32 KernelFullSize = FinalStylizedFilterSettings.Kernel + ((FinalStylizedFilterSettings.Kernel % 2 == 0) ? 1 : 0);
 		const int32 KernelHalfSize = FMath::FloorToInt32(static_cast<float>(KernelFullSize) * 0.5f);
@@ -106,6 +128,43 @@ void FStylizedFilterViewExtension::PrePostProcessPass_RenderThread(FRDGBuilder& 
 		AddDrawScreenPass(
 			GraphBuilder,
 			RDG_EVENT_NAME("SNN (PS)"),
+			View,
+			Viewport,
+			Viewport,
+			VertexShader,
+			PixelShader,
+			TStaticBlendState<>::GetRHI(),
+			TStaticDepthStencilState<false, CF_Always>::GetRHI(),
+			PassParameters);
+	}
+	// Stylized Filter Pass (Kuwahara)
+	else if (FinalStylizedFilterSettings.FilterType == EStylizedFilterType::Kuwahara)
+	{
+		const int32 KernelFullSize = FinalStylizedFilterSettings.Kernel + ((FinalStylizedFilterSettings.Kernel % 2 == 0) ? 1 : 0);
+		const int32 KernelHalfSize = FMath::FloorToInt32(static_cast<float>(KernelFullSize) * 0.5f);
+
+		TShaderMapRef<FScreenVS> VertexShader(static_cast<const FViewInfo&>(View).ShaderMap);
+		TShaderMapRef<FKuwaharaPS> PixelShader(static_cast<const FViewInfo&>(View).ShaderMap);
+
+		FKuwaharaPS::FParameters* PassParameters = GraphBuilder.AllocParameters<FKuwaharaPS::FParameters>();
+		PassParameters->View = View.ViewUniformBuffer;
+		PassParameters->SceneTextures = GetSceneTextureShaderParameters(Inputs.SceneTextures);
+		PassParameters->InvWeight = 1.0f / ((KernelHalfSize + 1) * (KernelHalfSize + 1));
+		PassParameters->IterParams[0] = FIntVector4(-KernelHalfSize,              0, -KernelHalfSize,              0);
+		PassParameters->IterParams[1] = FIntVector4(-KernelHalfSize,              0,               0, KernelHalfSize);
+		PassParameters->IterParams[2] = FIntVector4(              0, KernelHalfSize, -KernelHalfSize,              0);
+		PassParameters->IterParams[3] = FIntVector4(              0, KernelHalfSize,               0, KernelHalfSize);
+
+		PassParameters->RenderTargets[0] = FRenderTargetBinding(OutputTexture, ERenderTargetLoadAction::EClear);
+
+		const FScreenPassTexture BlackDummy(GSystemTextures.GetBlackDummy(GraphBuilder));
+
+		// This gets passed in whether or not it's used.
+		GraphBuilder.RemoveUnusedTextureWarning(BlackDummy.Texture);
+
+		AddDrawScreenPass(
+			GraphBuilder,
+			RDG_EVENT_NAME("Kuwahara (PS)"),
 			View,
 			Viewport,
 			Viewport,
