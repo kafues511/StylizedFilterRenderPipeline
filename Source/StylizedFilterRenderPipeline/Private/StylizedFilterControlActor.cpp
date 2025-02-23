@@ -18,6 +18,19 @@ void AStylizedFilterControlActor::BeginPlay()
 	}
 }
 
+void AStylizedFilterControlActor::Destroyed()
+{
+	if (UStylizedFilterSubsystem* Subsystem = UStylizedFilterSubsystem::GetCurrent(GetWorld()))
+	{
+		FStylizedFilterSettings CopyStylizedFilterSettings(StylizedFilterSettings);
+		CopyStylizedFilterSettings.bOverride_Enabled = true;
+		CopyStylizedFilterSettings.Enabled = false;
+		Subsystem->SetStylizedFilterSettings(CopyStylizedFilterSettings);
+	}
+
+	Super::Destroyed();
+}
+
 void AStylizedFilterControlActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
