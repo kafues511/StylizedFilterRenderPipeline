@@ -37,14 +37,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Stylized Filter Settings")
 	void OverrideStylizedFilterSettings(const FStylizedFilterSettings& NewValue);
 
-public:
-	/**  */
-	const FStylizedFilterSettings GetStylizedFilterSettingsForLock() const;
-
 private:
-	/**  */
-	mutable FCriticalSection CriticalSection;
-
 	/**  */
 	TSharedPtr<FStylizedFilterViewExtension, ESPMode::ThreadSafe> ViewExtension;
 

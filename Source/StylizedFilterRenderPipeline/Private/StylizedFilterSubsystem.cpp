@@ -48,9 +48,3 @@ void UStylizedFilterSubsystem::OverrideStylizedFilterSettings(const FStylizedFil
 	SET_PP(FilterType);
 	SET_PP(Kernel);
 }
-
-const FStylizedFilterSettings UStylizedFilterSubsystem::GetStylizedFilterSettingsForLock() const
-{
-	FScopeLock Lock(&CriticalSection);
-	return StylizedFilterSettings;
-}
